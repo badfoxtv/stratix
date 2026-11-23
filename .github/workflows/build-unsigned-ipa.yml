@@ -44,6 +44,10 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Stamp build commit into Info.plist
+        # Shown on the stream-failure overlay so a sideloaded build can be identified.
+        run: /usr/libexec/PlistBuddy -c "Add :StratixBuildCommit string ${GITHUB_SHA::7}" Apps/Stratix/Stratix/Info.plist
+
       - name: Build Stratix for tvOS device (unsigned)
         run: |
           set -o pipefail

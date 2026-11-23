@@ -99,8 +99,14 @@ struct StreamPreparingOverlay: View {
                     .font(.system(size: 17, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.5))
                     .multilineTextAlignment(.center)
-                    .lineLimit(8)
+                    .lineLimit(12)
                     .frame(maxWidth: 1100)
+
+                if let buildCommit = Bundle.main.object(forInfoDictionaryKey: "StratixBuildCommit") as? String {
+                    Text("build \(buildCommit)")
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                }
             } else {
                 ProgressView(value: 0.08, total: 1.0)
                     .tint(.white)
