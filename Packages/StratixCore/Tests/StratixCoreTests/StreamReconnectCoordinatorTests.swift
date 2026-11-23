@@ -58,6 +58,29 @@ struct StreamReconnectCoordinatorTests {
     }
 
     @Test
+    func reconnect_skipsRelaunchWhenCancelledDuringDisconnect() async {
+        let coordinator = StreamReconnectCoordinator(policy: StreamReconnectPolicy(maxAttempts: 3, retryDelay: .zero))
+        var relaunched = false
+
+        await coordinator.recordLaunchContext(target: .cloud(makeTitleID()), bridge: TestWebRTCBridge())
+        await coordinator.handleLifecycleChange(
+            event: StreamSessionLifecycleEvent(
+                lifecycle: .failed(StreamError(code: .unknown, message: "server error")),
+                disconnectIntent: .reconnectable
+            ),
+            environment: makeReconnectEnvironment(
+                autoReconnectEnabled: true,
+                // Mirrors the disconnect path cancelling the in-flight reconnect task.
+                disconnectCurrentSession: { await coordinator.reset() },
+                relaunch: { _, _ in relaunched = true }
+            )
+        )
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(relaunched == false)
+    }
+
+    @Test
     func handleLifecycleChange_failed_schedulesCloudReconnectWhenEligible() async {
         let coordinator = StreamReconnectCoordinator(policy: StreamReconnectPolicy(maxAttempts: 3, retryDelay: .zero))
         let session = makeStreamingSession()

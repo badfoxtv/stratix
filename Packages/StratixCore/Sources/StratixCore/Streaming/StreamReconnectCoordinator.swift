@@ -149,6 +149,10 @@ actor StreamReconnectCoordinator {
             try? await Task.sleep(for: policy.retryDelay)
             guard !Task.isCancelled else { return }
             await launcher.disconnectCurrentSession()
+            // Disconnecting emits lifecycle events that can cancel this very task (e.g. the
+            // retry budget is spent). Relaunching from a cancelled task fails every request
+            // with "cancelled" and replaces the real launch error on screen, so stop here.
+            guard !Task.isCancelled else { return }
             await launcher.relaunch(target, bridge)
             await self?.clearReconnectTask()
         }
