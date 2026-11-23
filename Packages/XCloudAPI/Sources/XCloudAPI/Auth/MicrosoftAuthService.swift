@@ -450,9 +450,10 @@ public actor MicrosoftAuthService {
         let tokenResponse = try JSONDecoder().decode(LPTTokenResponse.self, from: responseData)
         let expiresAt = tokenResponse.expiresIn.map { Date().addingTimeInterval(TimeInterval($0)) }
         try await tokenStore.saveLPTToken(tokenResponse.accessToken, expiresAt: expiresAt)
-        if let newRefresh = tokenResponse.refreshToken, !newRefresh.isEmpty {
-            try await tokenStore.saveRefreshToken(newRefresh)
-        }
+        // Deliberately NOT storing tokenResponse.refreshToken: login.live.com issues it for the
+        // Passport console-transfer scope. Overwriting the stored refresh token with it made the
+        // next refreshMSAToken (login.microsoftonline.com, xboxlive.signin scope) fail with
+        // invalid_grant, breaking every cloud launch after the first one.
         return tokenResponse.accessToken
     }
 

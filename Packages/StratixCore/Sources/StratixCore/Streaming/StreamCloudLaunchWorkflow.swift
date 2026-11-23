@@ -106,7 +106,10 @@ final class StreamCloudLaunchWorkflow {
             environment.logger.info("Preparing cloud stream auth…")
             cloudConnectAuth = try await environment.cloudConnectAuth()
         } catch {
-            let message = "Cloud connect auth failed: \(error.localizedDescription)"
+            var message = "Cloud connect auth failed: \(error.localizedDescription)"
+            if message.contains("invalid_grant") {
+                message += "\n\nThe saved sign-in is no longer valid. Sign out and sign in again."
+            }
             environment.logger.error(message)
             await environment.setLastAuthError(message)
             await environment.publish([
