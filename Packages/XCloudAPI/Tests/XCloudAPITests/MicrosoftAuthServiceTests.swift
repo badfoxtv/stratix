@@ -43,7 +43,7 @@ struct MicrosoftAuthServiceTests {
         #expect(!capture.body.contains("profile"))
     }
 
-    @Test func fetchLPT_usesLoginLiveEndpointAndScope() async throws {
+    @Test func fetchLPT_usesConsumersV2EndpointLikePlayXboxCom() async throws {
         let capture = RequestCaptureBox()
 
         let service = makeAuthService { request in
@@ -70,12 +70,36 @@ struct MicrosoftAuthServiceTests {
             }
         }
 
-        #expect(capture.url?.host == "login.live.com")
-        #expect(capture.url?.path == "/oauth20_token.srf")
+        #expect(capture.url?.host == "login.microsoftonline.com")
+        #expect(capture.url?.path == "/consumers/oauth2/v2.0/token")
         #expect(capture.body.contains("grant_type=refresh_token"))
         #expect(capture.body.contains("refresh_token=refresh-original"))
         #expect(capture.body.contains("client_id=1f907974-e22b-4810-a9de-d9647380c97e"))
         #expect(capture.body.contains("PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"))
+    }
+
+    @Test func fetchLPT_fallsBackToLoginLiveWhenV2Fails() async throws {
+        let hosts = HostLog()
+        let service = makeAuthService { request in
+            hosts.append(request.url?.host ?? "")
+            if request.url?.host == "login.microsoftonline.com" {
+                return .json(statusCode: 400, body: ["error": "invalid_scope", "error_description": "nope"])
+            }
+            return .json(statusCode: 200, body: ["access_token": "live-lpt", "expires_in": 3600])
+        }
+
+        do {
+            let token = try await service.fetchLPT(refreshToken: "refresh-original")
+            #expect(token == "live-lpt")
+        } catch let error as AuthError {
+            if case .networkError(let message) = error {
+                #expect(message.contains("Keychain save failed"))
+            } else {
+                Issue.record("Unexpected auth error: \(error)")
+            }
+        }
+
+        #expect(hosts.values == ["login.microsoftonline.com", "login.live.com"])
     }
 
     @Test func fetchLPT_surfacesHttpErrors() async {
@@ -273,4 +297,12 @@ private func requestFormBodyString(_ request: URLRequest) -> String {
         data.append(buffer, count: read)
     }
     return String(data: data, encoding: .utf8) ?? ""
+}
+
+private final class HostLog: @unchecked Sendable {
+    // Test-only; the stub handler runs serially, the lock guards the cross-thread read.
+    private let lock = NSLock()
+    private var storage: [String] = []
+    func append(_ host: String) { lock.lock(); storage.append(host); lock.unlock() }
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
 }

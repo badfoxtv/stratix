@@ -76,6 +76,19 @@ struct XCloudAPIClientTests {
         #expect(settings["locale"] as? String == "ru-RU")
     }
 
+    @Test func sendMSALAuth_sendsTransferTokenWithMsaIssuer() async throws {
+        let client = makeClient(responses: [
+            .json(statusCode: 202, pathSuffix: "/connect", body: [String: Any]())
+        ])
+
+        try? await client.sendMSALAuth(sessionPath: "/v5/sessions/cloud/abc", userToken: "transfer")
+
+        let connect = try #require(URLProtocolStub.recordedRequests().first { $0.url?.path.hasSuffix("/connect") == true })
+        let body = try #require(JSONSerialization.jsonObject(with: Data(requestBodyString(connect).utf8)) as? [String: Any])
+        #expect(body["userToken"] as? String == "transfer")
+        #expect(body["userTokenIssuer"] as? String == "MSA")
+    }
+
     // MARK: - SDP signaling parsing
 
     @Test func sendSDPOffer_usesImmediatePostResponseBody() async throws {

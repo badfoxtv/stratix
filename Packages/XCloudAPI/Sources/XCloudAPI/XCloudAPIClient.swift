@@ -378,8 +378,9 @@ public actor XCloudAPIClient {
     }
 
     public func sendMSALAuth(sessionPath: String, userToken: String) async throws {
-        struct AuthBody: Encodable { let userToken: String }
-        try await postVoid("\(sessionPath)/connect", body: AuthBody(userToken: userToken))
+        // play.xbox.com sends the issuer alongside the transfer token.
+        struct AuthBody: Encodable { let userToken: String; let userTokenIssuer: String }
+        try await postVoid("\(sessionPath)/connect", body: AuthBody(userToken: userToken, userTokenIssuer: "MSA"))
     }
 
     public func sendKeepalive(sessionPath: String) async throws {

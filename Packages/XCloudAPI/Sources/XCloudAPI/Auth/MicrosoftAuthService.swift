@@ -440,21 +440,57 @@ public actor MicrosoftAuthService {
         return try await fetchLPT(refreshToken: refreshToken)
     }
 
-    /// Mirrors xal-node's getMsalToken() path: exchange the MSA refresh token for a Passport
-    /// console-transfer scoped token and use that token as /connect userToken.
+    /// Fetches the console transfer token that xCloud `/connect` sends as `userToken`.
+    ///
+    /// play.xbox.com (Nov 2026 bundle, `shared-cone`) gets it from MSAL against the
+    /// `consumers` v2 authority with scope `service::…PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN`
+    /// and posts it with `userTokenIssuer: "MSA"`. The older xal-node path (login.live.com)
+    /// yields a token the server decrypts but then rejects in AddAndSignInUserV2
+    /// (InternalCode -2147186503), so the v2 endpoint is tried first and login.live.com only
+    /// as a fallback.
     public func fetchLPT(refreshToken: String) async throws -> String {
-        var components = URLComponents()
-        components.queryItems = [
+        do {
+            return try await requestTransferToken(
+                refreshToken: refreshToken,
+                endpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
+                scope: "\(Self.lptScope) offline_access openid",
+                storeRotatedRefreshToken: true
+            )
+        } catch {
+            do {
+                return try await requestTransferToken(
+                    refreshToken: refreshToken,
+                    endpoint: "https://login.live.com/oauth20_token.srf",
+                    scope: Self.lptScope,
+                    // login.live.com issues a refresh token for the Passport scope only;
+                    // storing it broke the next login.microsoftonline.com refresh (invalid_grant).
+                    storeRotatedRefreshToken: false
+                )
+            } catch let fallbackError {
+                throw AuthError.tokenExchangeFailed(
+                    "\(error.localizedDescription) | fallback: \(fallbackError.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private func requestTransferToken(
+        refreshToken: String,
+        endpoint: String,
+        scope: String,
+        storeRotatedRefreshToken: Bool
+    ) async throws -> String {
+        let items = [
             URLQueryItem(name: "client_id", value: Self.clientId),
             URLQueryItem(name: "grant_type", value: "refresh_token"),
             URLQueryItem(name: "refresh_token", value: refreshToken),
-            URLQueryItem(name: "scope", value: Self.lptScope)
+            URLQueryItem(name: "scope", value: scope)
         ]
-        guard let body = formURLEncodedBody(components.queryItems) else {
+        guard let body = formURLEncodedBody(items), let url = URL(string: endpoint) else {
             throw AuthError.invalidResponse("Failed to encode LPT request body")
         }
 
-        var request = URLRequest(url: URL(string: "https://login.live.com/oauth20_token.srf")!)
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
@@ -462,20 +498,21 @@ public actor MicrosoftAuthService {
         let (responseData, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let errorPayload = (try? JSONDecoder().decode(MSATokenErrorResponse.self, from: responseData))
-                .map { "\($0.error): \($0.errorDescription ?? "")" }
+                .map { "\($0.error): \(($0.errorDescription ?? "").components(separatedBy: "\r\n").first ?? "")" }
             let responseBody = errorPayload?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 ? errorPayload!
                 : (String(data: responseData, encoding: .utf8) ?? "<empty>")
-            throw AuthError.tokenExchangeFailed("LPT HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(responseBody)")
+            let host = url.host ?? endpoint
+            throw AuthError.tokenExchangeFailed("LPT HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0) (\(host)): \(responseBody)")
         }
 
         let tokenResponse = try JSONDecoder().decode(LPTTokenResponse.self, from: responseData)
         let expiresAt = tokenResponse.expiresIn.map { Date().addingTimeInterval(TimeInterval($0)) }
         try await tokenStore.saveLPTToken(tokenResponse.accessToken, expiresAt: expiresAt)
-        // Deliberately NOT storing tokenResponse.refreshToken: login.live.com issues it for the
-        // Passport console-transfer scope. Overwriting the stored refresh token with it made the
-        // next refreshMSAToken (login.microsoftonline.com, xboxlive.signin scope) fail with
-        // invalid_grant, breaking every cloud launch after the first one.
+        if storeRotatedRefreshToken, let rotated = tokenResponse.refreshToken {
+            // Same authority as refreshMSAToken, so the rotated token stays valid for it.
+            try await tokenStore.saveRefreshToken(rotated)
+        }
         return tokenResponse.accessToken
     }
 
