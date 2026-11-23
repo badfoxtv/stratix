@@ -82,30 +82,42 @@ struct StreamLaunchArtworkView: View {
 /// Displays the temporary overlay shown while a stream session is being prepared.
 struct StreamPreparingOverlay: View {
     let overlayInfo: StreamOverlayInfo
+    /// Set when the launch failed before a session was created; otherwise the overlay
+    /// would keep showing "Preparing Stream" forever with no hint of what went wrong.
+    var failureMessage: String? = nil
     let onCancel: () -> Void
 
     /// Renders the pre-session preparation message and cancel affordance.
     var body: some View {
         VStack(spacing: 18) {
-            Text("Preparing Stream")
+            Text(failureMessage == nil ? "Preparing Stream" : "Stream Failed to Start")
                 .font(.system(size: 34, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.white)
 
-            ProgressView(value: 0.08, total: 1.0)
-                .tint(.white)
-                .frame(width: 360)
+            if let failureMessage {
+                Text(failureMessage)
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.5))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(8)
+                    .frame(maxWidth: 1100)
+            } else {
+                ProgressView(value: 0.08, total: 1.0)
+                    .tint(.white)
+                    .frame(width: 360)
 
-            Text("Loading stream details and reserving a session.")
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.84))
-                .multilineTextAlignment(.center)
+                Text("Loading stream details and reserving a session.")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.84))
+                    .multilineTextAlignment(.center)
+            }
 
             Text("\(overlayInfo.subtitle) • \(overlayInfo.title)")
                 .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.white.opacity(0.9))
                 .multilineTextAlignment(.center)
 
-            Button("Cancel", action: onCancel)
+            Button(failureMessage == nil ? "Cancel" : "Close", action: onCancel)
                 .font(.system(size: 17, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.white)
                 .padding(.horizontal, 32)

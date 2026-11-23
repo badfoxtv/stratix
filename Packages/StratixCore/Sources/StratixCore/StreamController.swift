@@ -18,6 +18,8 @@ public final class StreamController {
 
     public var isReconnecting: Bool { state.isReconnecting }
     public var streamingSession: (any StreamingSessionFacade)? { state.streamingSession }
+    /// Error from a launch that failed before a session existed (auth, host resolution, start request).
+    public var lastStreamStartFailure: String? { state.lastStreamStartFailure }
     public var isStreamOverlayVisible: Bool { state.isStreamOverlayVisible }
     public var currentStreamAchievementSnapshot: TitleAchievementSnapshot? { state.currentStreamAchievementSnapshot }
     public var lastStreamAchievementError: String? { state.lastStreamAchievementError }

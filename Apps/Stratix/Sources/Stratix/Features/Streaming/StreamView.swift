@@ -140,7 +140,10 @@ struct StreamView: View {
             if let session {
                 sessionOverlay(session: session)
             } else {
-                StreamPreparingOverlay(overlayInfo: overlayInfo) {
+                StreamPreparingOverlay(
+                    overlayInfo: overlayInfo,
+                    failureMessage: streamController.lastStreamStartFailure
+                ) {
                     requestStreamExit()
                 }
             }
