@@ -30,7 +30,8 @@ jobs:
         run: swift test --package-path Packages/XCloudAPI
 
   build-ipa:
-    runs-on: macos-15
+    # Intel pool: macos-15 (arm64) jobs were dropped with "not acquired by Runner" due to capacity.
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v4
 
