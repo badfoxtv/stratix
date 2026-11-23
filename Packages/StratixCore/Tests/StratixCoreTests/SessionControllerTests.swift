@@ -34,6 +34,37 @@ struct SessionControllerTests {
     }
 
     @Test
+    func onAppear_cachedTokensWithoutXCloud_refreshesBeforeBoot() async {
+        let defaults = makeDefaults(suiteName: "SessionControllerTests.onAppear.cachedTokensWithoutXCloud")
+        let stub = SessionAuthClientStub()
+        await stub.setRestoreTokens(makeTokens(xcloudToken: nil))
+        await stub.setRefreshResult(.success(makeTokens(xcloudToken: "fresh-xcloud-token")))
+
+        let controller = SessionController(defaults: defaults, authClient: stub)
+        await controller.onAppear()
+
+        guard case .authenticated(let tokens) = controller.authState else {
+            Issue.record("Expected authenticated state")
+            return
+        }
+        #expect(tokens.xcloudToken == "fresh-xcloud-token")
+        #expect(await stub.refreshCallCount == 1)
+    }
+
+    @Test
+    func onAppear_cachedTokensWithoutXCloud_keepsCachedWhenRefreshFails() async {
+        let defaults = makeDefaults(suiteName: "SessionControllerTests.onAppear.cachedTokensWithoutXCloudRefreshFails")
+        let stub = SessionAuthClientStub()
+        await stub.setRestoreTokens(makeTokens(xcloudToken: nil))
+        await stub.setRefreshResult(.failure(StubError.expected))
+
+        let controller = SessionController(defaults: defaults, authClient: stub)
+        await controller.onAppear()
+
+        #expect(isAuthenticated(controller.authState))
+    }
+
+    @Test
     func beginSignIn_successPublishesAuthenticatedState() async {
         let defaults = makeDefaults(suiteName: "SessionControllerTests.beginSignIn.successPublishesAuthenticatedState")
         let stub = SessionAuthClientStub()
@@ -234,12 +265,13 @@ struct SessionControllerTests {
     private func makeTokens(
         webToken: String? = nil,
         webTokenUHS: String? = nil,
-        xcloudRegions: [LoginRegion] = []
+        xcloudRegions: [LoginRegion] = [],
+        xcloudToken: String? = "xcloud-token"
     ) -> StreamTokens {
         StreamTokens(
             xhomeToken: "xhome-token",
             xhomeHost: "https://xhome.example.com",
-            xcloudToken: "xcloud-token",
+            xcloudToken: xcloudToken,
             xcloudHost: "https://xcloud.example.com",
             webToken: webToken,
             webTokenUHS: webTokenUHS,

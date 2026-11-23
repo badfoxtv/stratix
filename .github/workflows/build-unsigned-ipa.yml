@@ -29,6 +29,9 @@ jobs:
       - name: Test XCloudAPI
         run: swift test --package-path Packages/XCloudAPI
 
+      - name: Test StratixCore SessionController
+        run: swift test --package-path Packages/StratixCore --filter SessionControllerTests
+
   build-ipa:
     # Intel pool: macos-15 (arm64) jobs were dropped with "not acquired by Runner" due to capacity.
     runs-on: macos-26-intel

@@ -115,6 +115,16 @@ public final class SessionController {
     /// Restores cached auth state on boot or falls back to a refresh-token sign-in flow.
     public func onAppear() async {
         if let tokens = await authClient.restoreStreamTokens() {
+            // Cached bundles without an xCloud token (e.g. saved before the region bypass was
+            // enabled) would boot the library into "Missing xCloud token", and a background
+            // refresh never re-hydrates it. Refresh first so the full boot sees the new token.
+            if tokens.xcloudToken?.isEmpty ?? true,
+               let refreshed = try? await authClient.refreshStreamTokens(),
+               !(refreshed.xcloudToken?.isEmpty ?? true) {
+                await applyTokens(refreshed, mode: .full)
+                lastTokenRefreshAttemptAt = Date()
+                return
+            }
             await applyTokens(tokens, mode: .full)
             await refreshStreamTokensInBackground(reason: "startup_cached_tokens", minimumInterval: 0)
             return
