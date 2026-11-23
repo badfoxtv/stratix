@@ -60,6 +60,22 @@ struct XCloudAPIClientTests {
         #expect(startBody.settings.sdkType == "web")
     }
 
+    @Test func startStream_sendsSelectedGameLanguageAsLocale() async throws {
+        let client = makeClient(responses: [
+            .json(statusCode: 200, pathSuffix: "/play", body: [String: Any]())
+        ])
+        var preferences = StreamPreferences()
+        preferences.locale = "ru-RU"
+
+        // The empty stub body may not decode; only the outgoing request matters here.
+        _ = try? await client.startStream(type: .cloud, targetId: "title-1", preferences: preferences)
+
+        let play = try #require(URLProtocolStub.recordedRequests().first { $0.url?.path.hasSuffix("/cloud/play") == true })
+        let body = try #require(JSONSerialization.jsonObject(with: Data(requestBodyString(play).utf8)) as? [String: Any])
+        let settings = try #require(body["settings"] as? [String: Any])
+        #expect(settings["locale"] as? String == "ru-RU")
+    }
+
     // MARK: - SDP signaling parsing
 
     @Test func sendSDPOffer_usesImmediatePostResponseBody() async throws {

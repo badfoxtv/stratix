@@ -84,6 +84,71 @@ struct MicrosoftAuthServiceTests {
             Issue.record("Unexpected error type: \(error)")
         }
     }
+
+    @Test func gssvLogin_sendsForwardedForWhenRegionBypassEnabled() async {
+        let headers = await gssvLoginForwardedForHeaders(bypassIP: RegionBypassCountry.poland.forwardedForIP)
+
+        #expect(headers.count == 3) // xhome, xgpuweb, xgpuwebf2p
+        #expect(headers.allSatisfy { $0 == "45.134.212.66" })
+    }
+
+    @Test func gssvLogin_omitsForwardedForWhenRegionBypassOff() async {
+        let headers = await gssvLoginForwardedForHeaders(bypassIP: RegionBypassCountry.off.forwardedForIP)
+
+        #expect(headers.count == 3)
+        #expect(headers.allSatisfy { $0 == nil })
+    }
+
+    @Test func regionBypassCountry_unknownStoredValueFallsBackToOff() throws {
+        let defaults = try #require(UserDefaults(suiteName: "RegionBypassCountryTests"))
+        defer { defaults.removePersistentDomain(forName: "RegionBypassCountryTests") }
+
+        defaults.set("Atlantis", forKey: RegionBypassCountry.defaultsKey)
+        #expect(RegionBypassCountry.current(defaults: defaults) == .off)
+
+        defaults.set("Poland", forKey: RegionBypassCountry.defaultsKey)
+        #expect(RegionBypassCountry.current(defaults: defaults) == .poland)
+    }
+}
+
+/// Runs the full token exchange against stubs and returns the X-Forwarded-For value
+/// seen on each GSSV `/v2/login/user` request.
+private func gssvLoginForwardedForHeaders(bypassIP: String?) async -> [String?] {
+    let capture = HeaderCaptureBox()
+    AuthURLProtocolStub.setHandler { request in
+        if request.url?.path == "/v2/login/user" {
+            capture.append(request.value(forHTTPHeaderField: "X-Forwarded-For"))
+            return .json(statusCode: 200, body: ["gsToken": "gs-token"])
+        }
+        return .json(statusCode: 200, body: ["Token": "xbox-token"])
+    }
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [AuthURLProtocolStub.self]
+    let service = MicrosoftAuthService(
+        tokenStore: TokenStore(),
+        session: URLSession(configuration: config),
+        regionBypassIP: { bypassIP }
+    )
+
+    // Keychain writes can fail in the package test sandbox; only the requests matter here.
+    _ = try? await service.exchangeForStreamTokens(msaAccessToken: "msa-token")
+    return capture.values
+}
+
+/// Collects headers from concurrent URLProtocol callbacks; the lock guards `storage`.
+private final class HeaderCaptureBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String?] = []
+
+    func append(_ value: String?) {
+        lock.lock(); defer { lock.unlock() }
+        storage.append(value)
+    }
+
+    var values: [String?] {
+        lock.lock(); defer { lock.unlock() }
+        return storage
+    }
 }
 
 // MARK: - Test helpers

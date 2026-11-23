@@ -1,0 +1,72 @@
+# Builds an unsigned tvOS .ipa for sideloading (Sideloadly / AltServer re-sign it with your Apple ID).
+# Added for personal device builds; it does not replace or gate any existing CI workflow.
+
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - region-bypass
+
+permissions:
+  contents: read
+
+jobs:
+  package-tests:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Test StratixModels
+        run: swift test --package-path Packages/StratixModels
+
+      - name: Test XCloudAPI
+        run: swift test --package-path Packages/XCloudAPI
+
+  build-ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build Stratix for tvOS device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace Stratix.xcworkspace \
+            -scheme Stratix-ReleaseRun \
+            -configuration Release \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package .ipa
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/dd/Build/Products/Release-appletvos" -maxdepth 1 -name '*.app' | head -1)"
+          test -n "$APP" || { echo "No .app found"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/Stratix-unsigned.ipa" Payload)
+          ls -lh "$GITHUB_WORKSPACE/Stratix-unsigned.ipa"
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stratix-unsigned-ipa
+          path: Stratix-unsigned.ipa
+          retention-days: 14

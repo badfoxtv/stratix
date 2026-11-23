@@ -3,6 +3,7 @@
 //
 
 import SwiftUI
+import StratixModels
 
 extension CloudLibrarySettingsView {
     var streamPane: some View {
@@ -14,6 +15,7 @@ extension CloudLibrarySettingsView {
                     CloudLibraryPickerRow(title: "Client Profile", selection: streamBinding(\.clientProfileOSName), options: ["Auto", "Android", "Windows", "Tizen"])
                     CloudLibraryPickerRow(title: "Resolution", selection: streamBinding(\.preferredResolution), options: ["720p", "1080p", "1440p"])
                     CloudLibraryPickerRow(title: "Frame Rate", selection: streamBinding(\.preferredFPS), options: ["30", "60"])
+                    CloudLibraryPickerRow(title: "Game Language", selection: gameLanguageBinding, options: StreamGameLanguage.all.map(\.name))
                     CloudLibraryPickerRow(title: "Stats HUD Position", selection: streamBinding(\.statsHUDPosition), options: ["topRight", "topLeft", "bottomRight", "bottomLeft"])
                     CloudLibrarySliderRow(title: "Bitrate Cap", value: streamBinding(\.bitrateCapMbps), range: 0...100, formatter: bitrateText, step: 4)
                     CloudLibraryToggleRow(title: "HDR Preferred", subtitle: "Enable HDR metadata when available", isOn: streamBinding(\.hdrEnabled))

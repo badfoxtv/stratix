@@ -285,10 +285,17 @@ public actor MicrosoftAuthService {
 
     private let tokenStore: TokenStore
     private let session: URLSession
+    /// Returns the IP to send as `X-Forwarded-For` on GSSV login, or nil to send none.
+    private let regionBypassIP: @Sendable () -> String?
 
-    public init(tokenStore: TokenStore, session: URLSession = .shared) {
+    public init(
+        tokenStore: TokenStore,
+        session: URLSession = .shared,
+        regionBypassIP: @escaping @Sendable () -> String? = { RegionBypassCountry.current().forwardedForIP }
+    ) {
         self.tokenStore = tokenStore
         self.session = session
+        self.regionBypassIP = regionBypassIP
     }
 
     // MARK: - Step 1: Request Device Code
@@ -547,6 +554,9 @@ public actor MicrosoftAuthService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("XboxComBrowser", forHTTPHeaderField: "x-gssv-client")
+        if let bypassIP = regionBypassIP() {
+            request.setValue(bypassIP, forHTTPHeaderField: "X-Forwarded-For")
+        }
         request.httpBody = try JSONEncoder().encode(GssvLoginRequest(token: xstsToken, offeringId: offering))
 
         let (data, response) = try await session.data(for: request)

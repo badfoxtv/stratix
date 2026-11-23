@@ -63,6 +63,24 @@ extension CloudLibrarySettingsView {
         )
     }
 
+    /// Maps the stored locale code (e.g. "ru-RU") to its display name for the picker.
+    var gameLanguageBinding: Binding<String> {
+        Binding(
+            get: {
+                let code = settingsStore.stream.locale
+                return StreamGameLanguage.all.first(where: { $0.code == code })?.name ?? code
+            },
+            set: { newValue in
+                guard let language = StreamGameLanguage.all.first(where: { $0.name == newValue }) else {
+                    return
+                }
+                var next = settingsStore.stream
+                next.locale = language.code
+                settingsStore.stream = next
+            }
+        )
+    }
+
     var diagnosticsFloorBehaviorBinding: Binding<String> {
         Binding(
             get: { settingsStore.diagnostics.upscalingFloorBehavior.label },

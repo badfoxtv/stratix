@@ -79,6 +79,8 @@ public final class SettingsStore {
         public var autoReconnect: Bool
         public var packetLossProtection: Bool
         public var regionOverride: String
+        /// Country spoofed via X-Forwarded-For on xCloud login (`RegionBypassCountry` raw value).
+        public var regionBypass: String
         public var upscalingEnabled: Bool
         public var audioBoost: Double
         public var colorRange: String
@@ -103,6 +105,7 @@ public final class SettingsStore {
             autoReconnect: Bool = true,
             packetLossProtection: Bool = true,
             regionOverride: String = "Auto",
+            regionBypass: String = "Off",
             upscalingEnabled: Bool = true,
             audioBoost: Double = 3.0,
             colorRange: String = "Auto",
@@ -126,6 +129,7 @@ public final class SettingsStore {
             self.autoReconnect = autoReconnect
             self.packetLossProtection = packetLossProtection
             self.regionOverride = regionOverride
+            self.regionBypass = regionBypass
             self.upscalingEnabled = upscalingEnabled
             self.audioBoost = audioBoost
             self.colorRange = colorRange
@@ -250,6 +254,7 @@ public final class SettingsStore {
         static let autoReconnect = "guide.auto_reconnect"
         static let packetLossProtection = "guide.packet_loss_protection"
         static let regionOverride = "guide.region_override"
+        static let regionBypass = "stratix.stream.regionBypass"
         static let upscalingEnabled = "guide.upscaling_enabled"
         static let rendererMode = "guide.renderer_mode"
         static let sharpness = "guide.sharpness"
@@ -317,6 +322,7 @@ public final class SettingsStore {
         Key.autoReconnect: true,
         Key.packetLossProtection: true,
         Key.regionOverride: "Auto",
+        Key.regionBypass: "Off",
         Key.upscalingEnabled: true,
         Key.rendererMode: "metalCAS",
         Key.sharpness: 0.0,
@@ -537,6 +543,7 @@ public final class SettingsStore {
         defaults.set(value.autoReconnect, forKey: Key.autoReconnect)
         defaults.set(value.packetLossProtection, forKey: Key.packetLossProtection)
         defaults.set(value.regionOverride, forKey: Key.regionOverride)
+        defaults.set(value.regionBypass, forKey: Key.regionBypass)
         defaults.set(value.upscalingEnabled, forKey: Key.upscalingEnabled)
         defaults.set(value.audioBoost, forKey: Key.audioBoost)
         defaults.set(value.colorRange, forKey: Key.colorRange)
@@ -618,6 +625,7 @@ public final class SettingsStore {
             autoReconnect: bool(defaults, Key.autoReconnect, fallback: true),
             packetLossProtection: bool(defaults, Key.packetLossProtection, fallback: true),
             regionOverride: string(defaults, Key.regionOverride, fallback: "Auto"),
+            regionBypass: string(defaults, Key.regionBypass, fallback: "Off"),
             upscalingEnabled: bool(defaults, Key.upscalingEnabled, fallback: true),
             audioBoost: double(defaults, Key.audioBoost, fallback: 3.0),
             colorRange: string(defaults, Key.colorRange, fallback: "Auto"),

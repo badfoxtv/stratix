@@ -104,6 +104,46 @@ public struct StreamPreferences: Sendable, Equatable {
     public init() {}
 }
 
+/// A game language the xCloud console can run in, sent as `settings.locale` on `/sessions/*/play`.
+public struct StreamGameLanguage: Sendable, Hashable {
+    public let code: String
+    public let name: String
+
+    /// Locales accepted by xCloud, matching Better xCloud's "Preferred game language" list.
+    public static let all: [StreamGameLanguage] = [
+        .init(code: "ar-SA", name: "العربية"),
+        .init(code: "bg-BG", name: "Български"),
+        .init(code: "cs-CZ", name: "čeština"),
+        .init(code: "da-DK", name: "dansk"),
+        .init(code: "de-DE", name: "Deutsch"),
+        .init(code: "el-GR", name: "Ελληνικά"),
+        .init(code: "en-GB", name: "English (UK)"),
+        .init(code: "en-US", name: "English (US)"),
+        .init(code: "es-ES", name: "español (España)"),
+        .init(code: "es-MX", name: "español (Latinoamérica)"),
+        .init(code: "fi-FI", name: "suomi"),
+        .init(code: "fr-FR", name: "français"),
+        .init(code: "he-IL", name: "עברית"),
+        .init(code: "hu-HU", name: "magyar"),
+        .init(code: "it-IT", name: "italiano"),
+        .init(code: "ja-JP", name: "日本語"),
+        .init(code: "ko-KR", name: "한국어"),
+        .init(code: "nb-NO", name: "norsk bokmål"),
+        .init(code: "nl-NL", name: "Nederlands"),
+        .init(code: "pl-PL", name: "polski"),
+        .init(code: "pt-BR", name: "português (Brasil)"),
+        .init(code: "pt-PT", name: "português (Portugal)"),
+        .init(code: "ro-RO", name: "Română"),
+        .init(code: "ru-RU", name: "русский"),
+        .init(code: "sk-SK", name: "slovenčina"),
+        .init(code: "sv-SE", name: "svenska"),
+        .init(code: "th-TH", name: "ไทย"),
+        .init(code: "tr-TR", name: "Türkçe"),
+        .init(code: "zh-CN", name: "中文(简体)"),
+        .init(code: "zh-TW", name: "中文 (繁體)"),
+    ]
+}
+
 public struct CGSizeValue: Codable, Sendable, Equatable {
     public let width: Double
     public let height: Double

@@ -5,10 +5,18 @@
 import SwiftUI
 import StratixCore
 import StratixModels
+import XCloudAPI
 
 extension CloudLibrarySettingsView {
     var diagnosticsPane: some View {
         VStack(alignment: .leading, spacing: 18) {
+            CloudLibraryPageSectionCard(title: "Region Bypass", subtitle: "Play xCloud from unsupported countries without a VPN. Restart the app after changing.") {
+                VStack(alignment: .leading, spacing: 12) {
+                    CloudLibraryPickerRow(title: "Spoof Country", selection: streamBinding(\.regionBypass), options: RegionBypassCountry.allCases.map(\.rawValue))
+                    CloudLibraryStatLine(icon: "exclamationmark.shield", text: "Same risk as using a VPN. Only the sign-in request is affected; the stream connects directly.")
+                }
+            }
+
             CloudLibraryPageSectionCard(title: "Region Override", subtitle: "Preferred xCloud region selection") {
                 VStack(alignment: .leading, spacing: 12) {
                     CloudLibraryPickerRow(title: "Region Override", selection: streamBinding(\.regionOverride), options: ["Auto", "US East", "US West", "Europe", "UK"])
