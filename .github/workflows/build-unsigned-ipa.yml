@@ -44,6 +44,11 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Ensure Metal Toolchain
+        # Xcode 26 ships the Metal compiler as a separate component; some runner images lack it,
+        # which failed builds with "cannot execute tool 'metal' due to missing Metal Toolchain".
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Stamp build commit into Info.plist
         # Shown on the stream-failure overlay so a sideloaded build can be identified.
         run: /usr/libexec/PlistBuddy -c "Add :StratixBuildCommit string ${GITHUB_SHA::7}" Apps/Stratix/Stratix/Info.plist
