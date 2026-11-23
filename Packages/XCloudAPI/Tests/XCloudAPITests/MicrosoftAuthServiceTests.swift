@@ -99,15 +99,17 @@ struct MicrosoftAuthServiceTests {
         #expect(headers.allSatisfy { $0 == nil })
     }
 
-    @Test func regionBypassCountry_unknownStoredValueFallsBackToOff() throws {
+    @Test func regionBypassCountry_missingOrUnknownValueFallsBackToPoland() throws {
         let defaults = try #require(UserDefaults(suiteName: "RegionBypassCountryTests"))
         defer { defaults.removePersistentDomain(forName: "RegionBypassCountryTests") }
 
-        defaults.set("Atlantis", forKey: RegionBypassCountry.defaultsKey)
-        #expect(RegionBypassCountry.current(defaults: defaults) == .off)
-
-        defaults.set("Poland", forKey: RegionBypassCountry.defaultsKey)
         #expect(RegionBypassCountry.current(defaults: defaults) == .poland)
+
+        defaults.set("Atlantis", forKey: RegionBypassCountry.defaultsKey)
+        #expect(RegionBypassCountry.current(defaults: defaults) == .poland)
+
+        defaults.set("Off", forKey: RegionBypassCountry.defaultsKey)
+        #expect(RegionBypassCountry.current(defaults: defaults) == .off)
     }
 }
 

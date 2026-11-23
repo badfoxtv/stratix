@@ -32,8 +32,12 @@ public enum RegionBypassCountry: String, CaseIterable, Sendable {
         }
     }
 
-    /// Reads the current selection; unknown or missing values resolve to `.off`.
+    /// Default when nothing is stored: xCloud rejects sign-in from unsupported regions
+    /// (e.g. Ukraine) unless the bypass is on, so it is enabled out of the box.
+    public static let defaultCountry: RegionBypassCountry = .poland
+
+    /// Reads the current selection; unknown or missing values resolve to `defaultCountry`.
     public static func current(defaults: UserDefaults = .standard) -> RegionBypassCountry {
-        defaults.string(forKey: defaultsKey).flatMap(RegionBypassCountry.init(rawValue:)) ?? .off
+        defaults.string(forKey: defaultsKey).flatMap(RegionBypassCountry.init(rawValue:)) ?? defaultCountry
     }
 }
