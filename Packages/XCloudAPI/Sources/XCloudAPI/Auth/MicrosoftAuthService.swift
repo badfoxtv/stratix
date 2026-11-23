@@ -271,6 +271,25 @@ public struct DeviceCodeInfo: Sendable {
     }
 }
 
+/// Encodes items as an `application/x-www-form-urlencoded` body.
+///
+/// `URLComponents.percentEncodedQuery` leaves `+` (and other URL-query-legal characters) as-is,
+/// but form decoding turns `+` into a space, corrupting tokens that contain it. Encode everything
+/// outside the unreserved set, matching `URLSearchParams` (what xal-node uses).
+func formURLEncodedBody(_ items: [URLQueryItem]?) -> Data? {
+    var unreserved = CharacterSet.alphanumerics
+    unreserved.insert(charactersIn: "-._~")
+    func encode(_ value: String) -> String? {
+        value.addingPercentEncoding(withAllowedCharacters: unreserved)
+    }
+    var pairs: [String] = []
+    for item in items ?? [] {
+        guard let name = encode(item.name), let value = encode(item.value ?? "") else { return nil }
+        pairs.append("\(name)=\(value)")
+    }
+    return pairs.joined(separator: "&").data(using: .utf8)
+}
+
 // MARK: - Microsoft Auth Service
 
 /// Owns Microsoft device-code sign-in, Xbox token exchange, and stream-token acquisition.
@@ -306,7 +325,7 @@ public actor MicrosoftAuthService {
             URLQueryItem(name: "client_id", value: Self.clientId),
             URLQueryItem(name: "scope", value: Self.scope)
         ]
-        guard let body = components.percentEncodedQuery?.data(using: .utf8) else {
+        guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode device code request body")
         }
 
@@ -360,7 +379,7 @@ public actor MicrosoftAuthService {
             URLQueryItem(name: "client_id", value: Self.clientId),
             URLQueryItem(name: "device_code", value: deviceCode)
         ]
-        guard let body = components.percentEncodedQuery?.data(using: .utf8) else {
+        guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode token request body")
         }
 
@@ -428,7 +447,7 @@ public actor MicrosoftAuthService {
             URLQueryItem(name: "refresh_token", value: refreshToken),
             URLQueryItem(name: "scope", value: Self.lptScope)
         ]
-        guard let body = components.percentEncodedQuery?.data(using: .utf8) else {
+        guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode LPT request body")
         }
 
@@ -465,7 +484,7 @@ public actor MicrosoftAuthService {
             URLQueryItem(name: "refresh_token", value: refreshToken),
             URLQueryItem(name: "scope", value: Self.scope)
         ]
-        guard let body = components.percentEncodedQuery?.data(using: .utf8) else {
+        guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode refresh token request body")
         }
 

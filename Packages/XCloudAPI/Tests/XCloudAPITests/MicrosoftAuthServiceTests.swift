@@ -85,6 +85,15 @@ struct MicrosoftAuthServiceTests {
         }
     }
 
+    @Test func formBody_percentEncodesPlusAndReservedCharacters() throws {
+        let data = try #require(formURLEncodedBody([
+            URLQueryItem(name: "refresh_token", value: "M.C5_BAY.0.U.-Ab+cd/ef=gh!ij*kl$$mn&op~"),
+            URLQueryItem(name: "scope", value: "xboxlive.signin openid")
+        ]))
+        let body = try #require(String(data: data, encoding: .utf8))
+        #expect(body == "refresh_token=M.C5_BAY.0.U.-Ab%2Bcd%2Fef%3Dgh%21ij%2Akl%24%24mn%26op~&scope=xboxlive.signin%20openid")
+    }
+
     @Test func gssvLogin_sendsForwardedForWhenRegionBypassEnabled() async {
         let headers = await gssvLoginForwardedForHeaders(bypassIP: RegionBypassCountry.poland.forwardedForIP)
 
