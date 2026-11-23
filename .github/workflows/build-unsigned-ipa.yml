@@ -61,7 +61,14 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Surface compiler errors as annotations
+        # Annotations are readable through the public API, unlike raw job logs.
+        if: failure()
+        run: |
+          grep -E "error:|\*\* BUILD FAILED|The following build commands failed" "$RUNNER_TEMP/xcodebuild.log" \
+            | sort -u | head -40 | sed 's/^/::error::/' || true
 
       - name: Package .ipa
         run: |
