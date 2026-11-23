@@ -500,7 +500,10 @@ public actor MicrosoftAuthService {
             let errorPayload = (try? JSONDecoder().decode(MSATokenErrorResponse.self, from: responseData))
                 .map { "\($0.error): \(($0.errorDescription ?? "").components(separatedBy: "\r\n").first ?? "")" }
             let responseBody = errorPayload ?? (String(data: responseData, encoding: .utf8) ?? "<empty>")
-            throw AuthError.tokenExchangeFailed("Refresh HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(responseBody)")
+            // Diagnostic only: describes the token's shape, never its contents.
+            let shape = "rt len=\(refreshToken.count) plus=\(refreshToken.contains("+")) "
+                + "space=\(refreshToken.contains(" ")) pct=\(refreshToken.contains("%"))"
+            throw AuthError.tokenExchangeFailed("Refresh HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(responseBody) [\(shape)]")
         }
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
