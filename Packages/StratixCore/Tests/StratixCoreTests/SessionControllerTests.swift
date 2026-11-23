@@ -219,18 +219,35 @@ struct SessionControllerTests {
     }
 
     @Test
-    func cloudConnectAuth_throwsWhenTokenRefreshFails() async {
-        let defaults = makeDefaults(suiteName: "SessionControllerTests.cloudConnectAuth.throwsWhenTokenRefreshFails")
+    func cloudConnectAuth_fallsBackToCurrentTokensWhenRefreshFails() async throws {
+        let defaults = makeDefaults(suiteName: "SessionControllerTests.cloudConnectAuth.fallsBackWhenRefreshFails")
         let stub = SessionAuthClientStub()
         await stub.setRefreshResult(.failure(StubError.expected))
         await stub.setFetchLPTResult(.success("fresh-lpt"))
         let controller = SessionController(defaults: defaults, authClient: stub)
 
-        await controller.applyTokensFromCoordinator(makeTokens(), mode: .full)
+        await controller.applyTokensFromCoordinator(makeTokens(xcloudToken: "current-xcloud"), mode: .full)
+        let auth = try await controller.cloudConnectAuth(logContext: "cloud stream start")
+
+        #expect(await stub.refreshCallCount == 1)
+        #expect(await stub.fetchLPTCallCount == 1)
+        #expect(auth.tokens.xcloudToken == "current-xcloud")
+        #expect(auth.userToken == "fresh-lpt")
+    }
+
+    @Test
+    func cloudConnectAuth_throwsWhenRefreshFailsWithoutXCloudToken() async {
+        let defaults = makeDefaults(suiteName: "SessionControllerTests.cloudConnectAuth.throwsWhenRefreshFailsWithoutXCloud")
+        let stub = SessionAuthClientStub()
+        await stub.setRefreshResult(.failure(StubError.expected))
+        await stub.setFetchLPTResult(.success("fresh-lpt"))
+        let controller = SessionController(defaults: defaults, authClient: stub)
+
+        await controller.applyTokensFromCoordinator(makeTokens(xcloudToken: nil), mode: .full)
 
         do {
             _ = try await controller.cloudConnectAuth(logContext: "cloud stream start")
-            Issue.record("Expected cloudConnectAuth to throw when token refresh fails")
+            Issue.record("Expected cloudConnectAuth to throw without an xCloud token to fall back to")
         } catch {
             #expect(await stub.refreshCallCount == 1)
             #expect(await stub.fetchLPTCallCount == 0)

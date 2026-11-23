@@ -249,17 +249,29 @@ public final class SessionController {
 
     /// Refreshes stream tokens and fetches the connect user token for a cloud-stream launch.
     func cloudConnectAuth(logContext: String) async throws -> CloudConnectAuth {
-        guard case .authenticated = authState else {
+        guard case .authenticated(let currentTokens) = authState else {
             throw SessionControllerError.unauthenticated
         }
 
         logger.info("Refreshing stream tokens before cloud stream…")
-        let refreshedTokens = try await refreshStreamTokens(logContext: logContext)
-        logger.info("Stream tokens refreshed successfully.")
+        let tokens: StreamTokens
+        do {
+            tokens = try await refreshStreamTokens(logContext: logContext)
+            logger.info("Stream tokens refreshed successfully.")
+        } catch {
+            // Like xal-node (refresh only when needed), don't block the launch on a failed
+            // refresh while the current bundle still has an xCloud token; the gsToken from
+            // sign-in stays valid for hours. Without one there is nothing to fall back to.
+            guard let xcloudToken = currentTokens.xcloudToken, !xcloudToken.isEmpty else {
+                throw error
+            }
+            logger.warning("Token refresh failed (\(logContext)); continuing with current tokens: \(error.localizedDescription)")
+            tokens = currentTokens
+        }
         logger.info("Fetching LPT for xCloud /connect...")
         let connectUserToken = try await fetchLPTForCloudConnect()
         logger.info("LPT obtained for /connect auth step.")
-        return CloudConnectAuth(tokens: refreshedTokens, userToken: connectUserToken)
+        return CloudConnectAuth(tokens: tokens, userToken: connectUserToken)
     }
 
     /// Overrides the visible auth error string, primarily for controller-owned error handling.
