@@ -476,7 +476,11 @@ public actor MicrosoftAuthService {
 
         let (responseData, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let responseBody = String(data: responseData, encoding: .utf8) ?? "<empty>"
+            // Show "error: AADSTSxxxx: reason" instead of the raw JSON (trace IDs, timestamps),
+            // so the cause is readable on the TV.
+            let errorPayload = (try? JSONDecoder().decode(MSATokenErrorResponse.self, from: responseData))
+                .map { "\($0.error): \(($0.errorDescription ?? "").components(separatedBy: "\r\n").first ?? "")" }
+            let responseBody = errorPayload ?? (String(data: responseData, encoding: .utf8) ?? "<empty>")
             throw AuthError.tokenExchangeFailed("Refresh HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(responseBody)")
         }
 
