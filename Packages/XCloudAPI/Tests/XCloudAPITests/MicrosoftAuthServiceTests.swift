@@ -27,6 +27,22 @@ struct MicrosoftAuthServiceTests {
         #expect(info.verificationUriComplete == "https://microsoft.com/devicelogin?otc=123")
     }
 
+    @Test func requestDeviceCode_requestsPlayXboxComScopesWithoutProfile() async throws {
+        let capture = RequestCaptureBox()
+        let service = makeAuthService { request in
+            capture.body = requestFormBodyString(request)
+            return .json(statusCode: 200, body: [
+                "device_code": "d", "user_code": "U", "verification_uri": "https://microsoft.com/link",
+                "expires_in": 900, "interval": 5
+            ])
+        }
+
+        _ = try await service.requestDeviceCode()
+
+        #expect(capture.body.contains("scope=xboxlive.signin%20offline_access%20openid"))
+        #expect(!capture.body.contains("profile"))
+    }
+
     @Test func fetchLPT_usesLoginLiveEndpointAndScope() async throws {
         let capture = RequestCaptureBox()
 

@@ -297,8 +297,11 @@ public actor MicrosoftAuthService {
     // Client ID for the Entra-registered public client used by xal-node / Stratix v2.
     // The legacy "000000004C12AE6F" Xbox app client is rejected by the /devicecode endpoint.
     private static let clientId = "1f907974-e22b-4810-a9de-d9647380c97e"
-    // Scopes required by xal-node: openid + profile for the id_token; offline_access for refresh token.
-    private static let scope = "xboxlive.signin openid profile offline_access"
+    // Matches play.xbox.com's device-code request (shared-cone bundle, Nov 2026):
+    // "xboxlive.signin offline_access openid". The older xal-node set also asked for `profile`,
+    // which the refresh grant now rejects with AADSTS70000 ("grant the client application
+    // access to the requested scope").
+    private static let scope = "xboxlive.signin offline_access openid"
     // Passport console-transfer scoped token required by xCloud /connect ("LPT" in xal-node).
     private static let lptScope = "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"
 
