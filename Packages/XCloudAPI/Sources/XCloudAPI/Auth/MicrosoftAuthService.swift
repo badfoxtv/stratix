@@ -35,12 +35,15 @@ struct MSATokenResponse: Decodable {
     let refreshToken: String?
     let expiresIn: Int
     let tokenType: String
+    /// Scopes Microsoft actually granted (may differ from the requested set).
+    let scope: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
         case tokenType = "token_type"
+        case scope
     }
 }
 
@@ -281,6 +284,9 @@ public actor MicrosoftAuthService {
     private static let clientId = "1f907974-e22b-4810-a9de-d9647380c97e"
     // Scopes required by xal-node: openid + profile for the id_token; offline_access for refresh token.
     private static let scope = "xboxlive.signin openid profile offline_access"
+    /// Diagnostics: remembers the scopes granted at sign-in so a failing refresh can be retried with them.
+    private static let grantedScopeDefaultsKey = "stratix.debug.grantedScope"
+    private let logger = GLogger(category: .auth)
     // Passport console-transfer scoped token required by xCloud /connect ("LPT" in xal-node).
     private static let lptScope = "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"
 
@@ -393,6 +399,10 @@ public actor MicrosoftAuthService {
         }
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
+        logger.info("Device code sign-in granted scope: '\(tokenResponse.scope ?? "<none>")' refresh_token=\(Self.tokenShape(tokenResponse.refreshToken))")
+        if let granted = tokenResponse.scope, !granted.isEmpty {
+            UserDefaults.standard.set(granted, forKey: Self.grantedScopeDefaultsKey)
+        }
         try await tokenStore.saveMSAToken(tokenResponse.accessToken)
         if let refresh = tokenResponse.refreshToken {
             try await tokenStore.saveRefreshToken(refresh)
@@ -459,12 +469,35 @@ public actor MicrosoftAuthService {
     }
 
     private func refreshMSAToken(refreshToken: String) async throws -> String {
+        do {
+            return try await refreshMSAToken(refreshToken: refreshToken, scope: Self.scope)
+        } catch {
+            // Diagnostic retry: if sign-in granted a different scope set, refresh with exactly that.
+            logger.warning("Refresh with requested scope '\(Self.scope)' failed; stored refresh_token=\(Self.tokenShape(refreshToken))")
+            guard let granted = UserDefaults.standard.string(forKey: Self.grantedScopeDefaultsKey),
+                  !granted.isEmpty, granted != Self.scope else {
+                logger.warning("No different granted scope stored; not retrying")
+                throw error
+            }
+            logger.info("Retrying refresh with granted scope '\(granted)'")
+            do {
+                let token = try await refreshMSAToken(refreshToken: refreshToken, scope: granted)
+                logger.info("Refresh with granted scope succeeded")
+                return token
+            } catch let retryError {
+                logger.error("Refresh with granted scope failed too: \(retryError.localizedDescription)")
+                throw error
+            }
+        }
+    }
+
+    private func refreshMSAToken(refreshToken: String, scope: String) async throws -> String {
         var components = URLComponents()
         components.queryItems = [
             URLQueryItem(name: "client_id", value: Self.clientId),
             URLQueryItem(name: "grant_type", value: "refresh_token"),
             URLQueryItem(name: "refresh_token", value: refreshToken),
-            URLQueryItem(name: "scope", value: Self.scope)
+            URLQueryItem(name: "scope", value: scope)
         ]
         guard let body = components.percentEncodedQuery?.data(using: .utf8) else {
             throw AuthError.invalidResponse("Failed to encode refresh token request body")
@@ -482,12 +515,20 @@ public actor MicrosoftAuthService {
         }
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
+        logger.info("Refresh granted scope: '\(tokenResponse.scope ?? "<none>")' new refresh_token=\(Self.tokenShape(tokenResponse.refreshToken))")
         try await tokenStore.saveMSAToken(tokenResponse.accessToken)
         // Rotate the stored refresh token if Microsoft issued a new one
         if let newRefresh = tokenResponse.refreshToken {
             try await tokenStore.saveRefreshToken(newRefresh)
         }
         return tokenResponse.accessToken
+    }
+
+    /// Describes a token's shape for logs without revealing it.
+    private static func tokenShape(_ token: String?) -> String {
+        guard let token else { return "<none>" }
+        let prefix = token.split(separator: ".").prefix(2).joined(separator: ".")
+        return "len=\(token.count) prefix=\(prefix.prefix(8)) plus=\(token.contains("+")) slash=\(token.contains("/")) eq=\(token.contains("="))"
     }
 
     // MARK: - Step 3: MSA Token → Xbox User Token
