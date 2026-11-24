@@ -1,0 +1,68 @@
+# Builds an unsigned Starfold tvOS .ipa (upstream JarvanSun/Starfold, unmodified source)
+# for sideloading with Sideloadly. Kept on its own branch of badfoxtv/stratix.
+name: Build Starfold tvOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - starfold
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest Xcode (Starfold needs Xcode 27+)
+        run: |
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] || XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $XC"
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Ensure Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Build StarfoldTV for tvOS device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Starfold.xcodeproj \
+            -scheme StarfoldTV \
+            -configuration Release \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Surface compiler errors as annotations
+        if: failure()
+        run: |
+          grep -E "error:|\*\* BUILD FAILED|The following build commands failed" "$RUNNER_TEMP/xcodebuild.log" \
+            | sort -u | head -40 | sed 's/^/::error::/' || true
+
+      - name: Package .ipa
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/dd/Build/Products/Release-appletvos" -maxdepth 1 -name '*.app' | head -1)"
+          test -n "$APP" || { echo "No .app found"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/Starfold-tvOS-unsigned.ipa" Payload)
+          ls -lh "$GITHUB_WORKSPACE/Starfold-tvOS-unsigned.ipa"
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Starfold-tvOS-unsigned-ipa
+          path: Starfold-tvOS-unsigned.ipa
+          retention-days: 14
