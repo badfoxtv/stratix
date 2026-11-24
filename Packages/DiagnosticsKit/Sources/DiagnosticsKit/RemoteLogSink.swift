@@ -76,14 +76,14 @@ public final class RemoteLogSink: Sendable {
     }
 
     /// Replaces JWTs and long token-like runs so credentials never reach the collector.
-    /// Dots are excluded from the run class so hostnames stay readable; dotted refresh
-    /// tokens are still caught because their segments are long on their own.
+    /// Dots and slashes are excluded from the run class so hostnames and URL paths stay
+    /// readable; tokens are still caught because their segments are long on their own.
     static func redact(_ message: String) -> String {
         var result = message
         if let jwt = try? Regex(#"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+(\.[A-Za-z0-9_\-]*)?"#) {
             result = result.replacing(jwt, with: "<jwt>")
         }
-        if let longToken = try? Regex(#"[A-Za-z0-9+/=_\-!*$%]{40,}"#) {
+        if let longToken = try? Regex(#"[A-Za-z0-9+=_\-!*$%]{40,}"#) {
             result = result.replacing(longToken, with: "<redacted>")
         }
         return result
