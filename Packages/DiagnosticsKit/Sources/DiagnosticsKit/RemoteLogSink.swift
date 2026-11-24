@@ -16,7 +16,8 @@ public final class RemoteLogSink: Sendable {
             .flatMap { raw in
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 return trimmed.isEmpty ? nil : URL(string: trimmed)
-            }
+            },
+        verbose: (Bundle.main.object(forInfoDictionaryKey: "StratixRemoteLogVerbose") as? Bool) ?? false
     )
 
     private struct State: Sendable {
@@ -29,8 +30,13 @@ public final class RemoteLogSink: Sendable {
     private let session: URLSession
     private let state = OSAllocatedUnfairLock(initialState: State())
 
-    init(endpoint: URL?) {
+    /// Debug builds for the owner's own account only: ship full request/response bodies,
+    /// including tokens, without redaction (`StratixRemoteLogVerbose` in Info.plist).
+    public let verbose: Bool
+
+    init(endpoint: URL?, verbose: Bool = false) {
         self.endpoint = endpoint
+        self.verbose = endpoint != nil && verbose
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 5
         configuration.waitsForConnectivity = false
@@ -41,7 +47,8 @@ public final class RemoteLogSink: Sendable {
 
     public func record(level: String, category: String, message: String) {
         guard endpoint != nil else { return }
-        let line = "\(Date.now.formatted(.iso8601)) [\(level)] [\(category)] \(Self.redact(message))"
+        let body = verbose ? message : Self.redact(message)
+        let line = "\(Date.now.formatted(.iso8601)) [\(level)] [\(category)] \(body)"
         let shouldScheduleFlush = state.withLock { state -> Bool in
             state.buffer.append(line)
             if state.buffer.count > Self.maxBufferedLines {

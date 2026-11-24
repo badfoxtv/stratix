@@ -35,12 +35,17 @@ struct MSATokenResponse: Decodable {
     let refreshToken: String?
     let expiresIn: Int
     let tokenType: String
+    /// Scopes Microsoft actually granted (may differ from the requested set).
+    let scope: String?
+    let idToken: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
         case tokenType = "token_type"
+        case scope
+        case idToken = "id_token"
     }
 }
 
@@ -422,6 +427,7 @@ public actor MicrosoftAuthService {
         }
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
+        logger.info("Device code sign-in granted scope: '\(tokenResponse.scope ?? "<none>")' id_token claims: \(Self.jwtClaims(tokenResponse.idToken))")
         try await tokenStore.saveMSAToken(tokenResponse.accessToken)
         if let refresh = tokenResponse.refreshToken {
             try await tokenStore.saveRefreshToken(refresh)
@@ -462,7 +468,8 @@ public actor MicrosoftAuthService {
             return try await requestTransferToken(
                 refreshToken: refreshToken,
                 endpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
-                scope: "\(Self.lptScope) offline_access openid",
+                // Exactly what the working xbox.com/play client sends (captured 2026-11-24).
+                scope: "\(Self.lptScope) openid profile offline_access",
                 claims: Self.ageVerificationClaims,
                 storeRotatedRefreshToken: true
             )
@@ -565,12 +572,24 @@ public actor MicrosoftAuthService {
         }
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
+        logger.info("Refresh granted scope: '\(tokenResponse.scope ?? "<none>")'")
         try await tokenStore.saveMSAToken(tokenResponse.accessToken)
         // Rotate the stored refresh token if Microsoft issued a new one
         if let newRefresh = tokenResponse.refreshToken {
             try await tokenStore.saveRefreshToken(newRefresh)
         }
         return tokenResponse.accessToken
+    }
+
+    /// Decodes a JWT payload (no signature check) for diagnostics.
+    private static func jwtClaims(_ jwt: String?) -> String {
+        guard let jwt else { return "<no id_token>" }
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return "<not a JWT>" }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload) else { return "<undecodable>" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     // MARK: - Step 3: MSA Token → Xbox User Token
@@ -639,6 +658,8 @@ public actor MicrosoftAuthService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("XboxComBrowser", forHTTPHeaderField: "x-gssv-client")
+        // Sent by the working xbox.com/play client on login (captured 2026-11-24).
+        request.setValue("AFD", forHTTPHeaderField: "x-gssv-routing")
         if let bypassIP = regionBypassIP() {
             request.setValue(bypassIP, forHTTPHeaderField: "X-Forwarded-For")
         }

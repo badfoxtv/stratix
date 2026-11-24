@@ -77,6 +77,11 @@ struct StreamRegionSelectionPolicy: Sendable {
                 return contains
             }
         }
+        // With the Poland bypass the server default is Sweden Central, where the console
+        // sign-in failed; the working browser session ran in West Europe. Prefer it.
+        if let westEurope = availableRegions.first(where: { $0.name.lowercased() == "westeurope" }) {
+            return westEurope
+        }
         return availableRegions.first(where: \.isDefault) ?? availableRegions.first
     }
 
