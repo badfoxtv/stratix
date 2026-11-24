@@ -1,0 +1,100 @@
+# Builds an unsigned tvOS .ipa for sideloading (Sideloadly / AltServer re-sign it with your Apple ID).
+# Added for personal device builds; it does not replace or gate any existing CI workflow.
+
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - minimal-bypass-logs
+
+permissions:
+  contents: read
+
+jobs:
+  package-tests:
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Test DiagnosticsKit
+        run: swift test --package-path Packages/DiagnosticsKit
+
+      - name: Test XCloudAPI
+        run: swift test --package-path Packages/XCloudAPI
+
+  build-ipa:
+    # Intel pool: macos-15 (arm64) jobs were dropped with "not acquired by Runner" due to capacity.
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Ensure Metal Toolchain
+        # Xcode 26 ships the Metal compiler as a separate component; some runner images lack it,
+        # which failed builds with "cannot execute tool 'metal' due to missing Metal Toolchain".
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Stamp build commit into Info.plist
+        # Shown on the stream-failure overlay so a sideloaded build can be identified.
+        run: /usr/libexec/PlistBuddy -c "Add :StratixBuildCommit string ${GITHUB_SHA::7}" Apps/Stratix/Stratix/Info.plist
+
+      - name: Point remote debug logs at the developer Mac
+        # RemoteLogSink POSTs redacted app logs here (collector: scratchpad log_collector.py).
+        # Set repo variable STRATIX_REMOTE_LOG_URL to override; empty disables shipping.
+        env:
+          REMOTE_LOG_URL: ${{ vars.STRATIX_REMOTE_LOG_URL || 'http://192.168.31.2:8765/log' }}
+        run: |
+          plist=Apps/Stratix/Stratix/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :StratixRemoteLogURL string $REMOTE_LOG_URL" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$plist" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$plist"
+
+      - name: Build Stratix for tvOS device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace Stratix.xcworkspace \
+            -scheme Stratix-ReleaseRun \
+            -configuration Release \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Surface compiler errors as annotations
+        # Annotations are readable through the public API, unlike raw job logs.
+        if: failure()
+        run: |
+          grep -E "error:|\*\* BUILD FAILED|The following build commands failed" "$RUNNER_TEMP/xcodebuild.log" \
+            | sort -u | head -40 | sed 's/^/::error::/' || true
+
+      - name: Package .ipa
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/dd/Build/Products/Release-appletvos" -maxdepth 1 -name '*.app' | head -1)"
+          test -n "$APP" || { echo "No .app found"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/Stratix-unsigned.ipa" Payload)
+          ls -lh "$GITHUB_WORKSPACE/Stratix-unsigned.ipa"
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stratix-unsigned-ipa
+          path: Stratix-unsigned.ipa
+          retention-days: 14

@@ -390,7 +390,7 @@ public actor XCloudAPIClient {
         let url = URL(string: baseHost + sessionPath)!
         var request = makeRequest(url: url)
         request.httpMethod = "DELETE"
-        _ = try await session.data(for: request)
+        _ = try await session.loggedData(for: request)
     }
 
     // MARK: - Private HTTP Helpers
@@ -443,7 +443,7 @@ public actor XCloudAPIClient {
         let url = URL(string: baseHost + path)!
         var request = makeRequest(url: url)
         request.httpMethod = "GET"
-        return try await session.data(for: request)
+        return try await session.loggedData(for: request)
     }
 
     private func rawGetLibrary(_ path: String) async throws -> (Data, URLResponse) {
@@ -452,7 +452,7 @@ public actor XCloudAPIClient {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(gsToken)", forHTTPHeaderField: "Authorization")
-        return try await session.data(for: request)
+        return try await session.loggedData(for: request)
     }
 
     private func logFullLibraryPayloadIfNeeded(path: String, data: Data, response: URLResponse) {
@@ -498,7 +498,7 @@ public actor XCloudAPIClient {
         var request = makeRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = try JSONEncoder().encode(body)
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let responseBody = String(data: responseData, encoding: .utf8) ?? ""
             throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0, responseBody)
@@ -515,7 +515,7 @@ public actor XCloudAPIClient {
         var request = makeRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = try JSONEncoder().encode(body)
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let responseBody = String(data: responseData, encoding: .utf8) ?? ""
             throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0, responseBody)
@@ -528,7 +528,7 @@ public actor XCloudAPIClient {
         var request = makeRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = try JSONEncoder().encode(body)
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let responseBody = String(data: responseData, encoding: .utf8) ?? ""
             throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0, responseBody)

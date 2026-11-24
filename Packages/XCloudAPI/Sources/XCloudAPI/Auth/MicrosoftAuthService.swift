@@ -3,6 +3,7 @@
 //
 
 import Foundation
+import DiagnosticsKit
 
 
 // MARK: - Device Code Auth Response
@@ -286,7 +287,15 @@ public actor MicrosoftAuthService {
     private let tokenStore: TokenStore
     private let session: URLSession
 
-    public init(tokenStore: TokenStore, session: URLSession = .shared) {
+    /// Returns the IP to send as `X-Forwarded-For` on GSSV login, or nil to send none.
+    private let regionBypassIP: @Sendable () -> String?
+
+    public init(
+        tokenStore: TokenStore,
+        session: URLSession = .shared,
+        regionBypassIP: @escaping @Sendable () -> String? = { RegionBypassCountry.current().forwardedForIP }
+    ) {
+        self.regionBypassIP = regionBypassIP
         self.tokenStore = tokenStore
         self.session = session
     }
@@ -308,7 +317,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             let responseBody = String(data: responseData, encoding: .utf8) ?? "<empty>"
             throw AuthError.invalidResponse("Device code request failed HTTP \(http.statusCode): \(responseBody)")
@@ -362,7 +371,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         let httpResponse = response as? HTTPURLResponse
 
         // Check for pending / expired before checking HTTP status.
@@ -430,7 +439,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let errorPayload = (try? JSONDecoder().decode(MSATokenErrorResponse.self, from: responseData))
                 .map { "\($0.error): \($0.errorDescription ?? "")" }
@@ -466,7 +475,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let responseBody = String(data: responseData, encoding: .utf8) ?? "<empty>"
             throw AuthError.tokenExchangeFailed("Refresh HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(responseBody)")
@@ -547,9 +556,13 @@ public actor MicrosoftAuthService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("XboxComBrowser", forHTTPHeaderField: "x-gssv-client")
+        // Region bypass (Better xCloud style): only the GSSV login sees the spoofed IP.
+        if let bypassIP = regionBypassIP() {
+            request.setValue(bypassIP, forHTTPHeaderField: "X-Forwarded-For")
+        }
         request.httpBody = try JSONEncoder().encode(GssvLoginRequest(token: xstsToken, offeringId: offering))
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let bodyStr = String(data: data, encoding: .utf8) ?? "<empty>"
             throw AuthError.tokenExchangeFailed("Stream token HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(bodyStr)")
@@ -647,7 +660,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("1", forHTTPHeaderField: "x-xbl-contract-version")
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
             throw AuthError.tokenExchangeFailed("HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(bodyStr)")
