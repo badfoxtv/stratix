@@ -41,6 +41,7 @@ jobs:
             -destination 'generic/platform=tvOS' \
             -derivedDataPath "$RUNNER_TEMP/dd" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            TVOS_DEPLOYMENT_TARGET=27.1 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
