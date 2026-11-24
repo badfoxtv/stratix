@@ -57,6 +57,8 @@ jobs:
         run: |
           plist=Apps/Stratix/Stratix/Info.plist
           /usr/libexec/PlistBuddy -c "Add :StratixRemoteLogURL string $REMOTE_LOG_URL" "$plist"
+          # Owner-only debug build: full auth/xCloud exchanges, tokens included.
+          /usr/libexec/PlistBuddy -c "Add :StratixRemoteLogVerbose bool true" "$plist"
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$plist" || true
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$plist"
 

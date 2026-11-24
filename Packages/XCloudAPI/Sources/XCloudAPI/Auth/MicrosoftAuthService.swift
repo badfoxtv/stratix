@@ -37,6 +37,7 @@ struct MSATokenResponse: Decodable {
     let tokenType: String
     /// Scopes Microsoft actually granted (may differ from the requested set).
     let scope: String?
+    let idToken: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
@@ -44,6 +45,7 @@ struct MSATokenResponse: Decodable {
         case expiresIn = "expires_in"
         case tokenType = "token_type"
         case scope
+        case idToken = "id_token"
     }
 }
 
@@ -400,6 +402,7 @@ public actor MicrosoftAuthService {
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
         logger.info("Device code sign-in granted scope: '\(tokenResponse.scope ?? "<none>")' refresh_token=\(Self.tokenShape(tokenResponse.refreshToken))")
+        logger.info("Device code sign-in id_token claims: \(Self.jwtClaims(tokenResponse.idToken))")
         if let granted = tokenResponse.scope, !granted.isEmpty {
             UserDefaults.standard.set(granted, forKey: Self.grantedScopeDefaultsKey)
         }
@@ -516,12 +519,24 @@ public actor MicrosoftAuthService {
 
         let tokenResponse = try JSONDecoder().decode(MSATokenResponse.self, from: responseData)
         logger.info("Refresh granted scope: '\(tokenResponse.scope ?? "<none>")' new refresh_token=\(Self.tokenShape(tokenResponse.refreshToken))")
+        logger.info("Refresh id_token claims: \(Self.jwtClaims(tokenResponse.idToken))")
         try await tokenStore.saveMSAToken(tokenResponse.accessToken)
         // Rotate the stored refresh token if Microsoft issued a new one
         if let newRefresh = tokenResponse.refreshToken {
             try await tokenStore.saveRefreshToken(newRefresh)
         }
         return tokenResponse.accessToken
+    }
+
+    /// Decodes a JWT payload (no signature check) for diagnostics.
+    private static func jwtClaims(_ jwt: String?) -> String {
+        guard let jwt else { return "<no id_token>" }
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return "<not a JWT>" }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload) else { return "<undecodable>" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// Describes a token's shape for logs without revealing it.

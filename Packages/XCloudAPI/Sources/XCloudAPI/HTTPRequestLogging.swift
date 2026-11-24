@@ -20,7 +20,19 @@ extension URLSession {
             let ms = elapsed.seconds * 1000 + elapsed.attoseconds / 1_000_000_000_000_000
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             var line = "HTTP \(method) \(target) -> \(status) (\(ms) ms)"
-            if status >= 400 || Self.shouldLogBody(path: request.url?.path ?? "") {
+            if RemoteLogSink.shared.verbose, Self.isAuthOrStreamHost(request.url?.host) {
+                // Owner's debug build: full exchange, headers included, nothing truncated.
+                let headers = (request.allHTTPHeaderFields ?? [:])
+                    .map { "\($0.key): \($0.value)" }.sorted().joined(separator: " | ")
+                let requestBody = request.httpBody.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                let responseHeaders = ((response as? HTTPURLResponse)?.allHeaderFields ?? [:])
+                    .map { "\($0.key): \($0.value)" }.sorted().joined(separator: " | ")
+                line += "\n  url: \(request.url?.absoluteString ?? "")"
+                line += "\n  request headers: \(headers)"
+                line += "\n  request body: \(requestBody)"
+                line += "\n  response headers: \(responseHeaders)"
+                line += "\n  response body: \(String(decoding: data, as: UTF8.self))"
+            } else if status >= 400 || Self.shouldLogBody(path: request.url?.path ?? "") {
                 let excerpt = String(decoding: data.prefix(600), as: UTF8.self)
                     .replacingOccurrences(of: "\n", with: " ")
                 if !excerpt.isEmpty { line += " body: \(excerpt)" }
@@ -31,6 +43,12 @@ extension URLSession {
             logger.error("HTTP \(method) \(target) failed: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    private static func isAuthOrStreamHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host.hasPrefix("login.") || host.contains("auth.xboxlive.com")
+            || host.contains("gssv-play-prod") || host.contains("gssv-fastlane")
     }
 
     private static func shouldLogBody(path: String) -> Bool {

@@ -239,13 +239,22 @@ public final class SessionController {
 
     /// Refreshes stream tokens and fetches the connect user token for a cloud-stream launch.
     func cloudConnectAuth(logContext: String) async throws -> CloudConnectAuth {
-        guard case .authenticated = authState else {
+        guard case .authenticated(let currentTokens) = authState else {
             throw SessionControllerError.unauthenticated
         }
 
         logger.info("Refreshing stream tokens before cloud stream…")
-        let refreshedTokens = try await refreshStreamTokens(logContext: logContext)
-        logger.info("Stream tokens refreshed successfully.")
+        let refreshedTokens: StreamTokens
+        do {
+            refreshedTokens = try await refreshStreamTokens(logContext: logContext)
+            logger.info("Stream tokens refreshed successfully.")
+        } catch {
+            // Diagnostics: keep going with the sign-in tokens so the rest of the launch
+            // (play, connect, console sign-in) shows up in the remote log.
+            guard let xcloudToken = currentTokens.xcloudToken, !xcloudToken.isEmpty else { throw error }
+            logger.warning("Token refresh failed; continuing launch with sign-in tokens: \(error.localizedDescription)")
+            refreshedTokens = currentTokens
+        }
         logger.info("Fetching LPT for xCloud /connect...")
         let connectUserToken = try await fetchLPTForCloudConnect()
         logger.info("LPT obtained for /connect auth step.")
