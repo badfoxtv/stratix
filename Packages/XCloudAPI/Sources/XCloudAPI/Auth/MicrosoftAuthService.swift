@@ -409,6 +409,8 @@ public actor MicrosoftAuthService {
         try await tokenStore.saveMSAToken(tokenResponse.accessToken)
         if let refresh = tokenResponse.refreshToken {
             try await tokenStore.saveRefreshToken(refresh)
+            let latest = await runRefreshProbe(refreshToken: refresh, grantedScope: tokenResponse.scope)
+            try await tokenStore.saveRefreshToken(latest)
         }
         return tokenResponse.accessToken
     }
@@ -526,6 +528,68 @@ public actor MicrosoftAuthService {
             try await tokenStore.saveRefreshToken(newRefresh)
         }
         return tokenResponse.accessToken
+    }
+
+    /// Diagnostics: right after sign-in, try every refresh / transfer-token variant once and
+    /// log which ones Microsoft accepts. Chains the newest refresh token through the attempts
+    /// (so token rotation cannot fake a failure) and returns it for storage.
+    private func runRefreshProbe(refreshToken: String, grantedScope: String?) async -> String {
+        let v2 = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+        let live = "https://login.live.com/oauth20_token.srf"
+        let agvs = #"{"id_token":{"xms_agvs":{"essential":false}}}"#
+        var variants: [(name: String, endpoint: String, scope: String?, claims: String?)] = [
+            ("v2 upstream scope", v2, Self.scope, nil),
+            ("v2 play.xbox.com scope", v2, "xboxlive.signin offline_access openid", nil),
+            ("v2 play.xbox.com scope + agvs claims", v2, "xboxlive.signin offline_access openid", agvs),
+            ("v2 xboxlive.signin offline_access", v2, "xboxlive.signin offline_access", nil),
+            ("v2 transfer scope", v2, "\(Self.lptScope) offline_access openid", nil),
+            ("v2 transfer scope + agvs claims", v2, "\(Self.lptScope) offline_access openid", agvs),
+            ("live transfer scope", live, Self.lptScope, nil),
+            ("live xboxlive.signin", live, "service::user.auth.xboxlive.com::MBI_SSL", nil),
+        ]
+        if let grantedScope, !grantedScope.isEmpty {
+            variants.insert(("v2 granted scope", v2, grantedScope, nil), at: 0)
+        }
+        var current = refreshToken
+        logger.info("[PROBE] start: granted scope='\(grantedScope ?? "<none>")'")
+        for variant in variants {
+            var items = [
+                URLQueryItem(name: "client_id", value: Self.clientId),
+                URLQueryItem(name: "grant_type", value: "refresh_token"),
+                URLQueryItem(name: "refresh_token", value: current),
+            ]
+            if let scope = variant.scope { items.append(URLQueryItem(name: "scope", value: scope)) }
+            if let claims = variant.claims { items.append(URLQueryItem(name: "claims", value: claims)) }
+            var request = URLRequest(url: URL(string: variant.endpoint)!)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = probeFormBody(items)
+            do {
+                let (data, response) = try await session.loggedData(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if status == 200, let decoded = try? JSONDecoder().decode(MSATokenResponse.self, from: data) {
+                    logger.info("[PROBE] \(variant.name): OK scope='\(decoded.scope ?? "")' id_token=\(Self.jwtClaims(decoded.idToken))")
+                    // Only rotate along the login.microsoftonline.com chain; live.com tokens are Passport-scoped.
+                    if variant.endpoint == v2, let rotated = decoded.refreshToken, !rotated.isEmpty { current = rotated }
+                } else {
+                    logger.warning("[PROBE] \(variant.name): HTTP \(status) \(String(decoding: data.prefix(300), as: UTF8.self))")
+                }
+            } catch {
+                logger.warning("[PROBE] \(variant.name): \(error.localizedDescription)")
+            }
+        }
+        logger.info("[PROBE] done")
+        return current
+    }
+
+    private func probeFormBody(_ items: [URLQueryItem]) -> Data {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        let encoded = items.map { item in
+            let value = (item.value ?? "").addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+            return "\(item.name)=\(value)"
+        }
+        return Data(encoded.joined(separator: "&").utf8)
     }
 
     /// Decodes a JWT payload (no signature check) for diagnostics.
