@@ -77,6 +77,7 @@ public final class LoggerStore: Sendable {
 public struct GLogger: Sendable {
     private static let subsystem = "com.stratix.app"
     private let logger: os.Logger
+    private let category: String
 
     /// Global toggle used by all GLogger instances in the current process.
     public static var isEnabled: Bool {
@@ -87,29 +88,35 @@ public struct GLogger: Sendable {
     /// Creates a logger bound to one of the repo's shared log categories.
     public init(category: LogCategory) {
         self.logger = os.Logger(subsystem: Self.subsystem, category: category.rawValue)
+        self.category = category.rawValue
     }
 
     public func debug(_ message: String) {
+        RemoteLogSink.shared.record(level: "DEBUG", category: category, message: message)
         guard Self.isEnabled else { return }
         logger.debug("\(message, privacy: .public)")
     }
 
     public func info(_ message: String) {
+        RemoteLogSink.shared.record(level: "INFO", category: category, message: message)
         guard Self.isEnabled else { return }
         logger.info("\(message, privacy: .public)")
     }
 
     public func warning(_ message: String) {
+        RemoteLogSink.shared.record(level: "WARNING", category: category, message: message)
         guard Self.isEnabled else { return }
         logger.warning("\(message, privacy: .public)")
     }
 
     public func error(_ message: String) {
+        RemoteLogSink.shared.record(level: "ERROR", category: category, message: message)
         guard Self.isEnabled else { return }
         logger.error("\(message, privacy: .public)")
     }
 
     public func fault(_ message: String) {
+        RemoteLogSink.shared.record(level: "FAULT", category: category, message: message)
         guard Self.isEnabled else { return }
         logger.fault("\(message, privacy: .public)")
     }

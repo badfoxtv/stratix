@@ -41,6 +41,7 @@ struct MicrosoftAuthServiceTests {
 
         #expect(capture.body.contains("scope=xboxlive.signin%20offline_access%20openid"))
         #expect(!capture.body.contains("profile"))
+        #expect(capture.body.contains("cmode=xbox"))
     }
 
     @Test func fetchLPT_usesConsumersV2EndpointLikePlayXboxCom() async throws {
@@ -76,6 +77,8 @@ struct MicrosoftAuthServiceTests {
         #expect(capture.body.contains("refresh_token=refresh-original"))
         #expect(capture.body.contains("client_id=1f907974-e22b-4810-a9de-d9647380c97e"))
         #expect(capture.body.contains("PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"))
+        // Age-verification status claim, form-encoded, as play.xbox.com sends it.
+        #expect(capture.body.contains("claims=%7B%22id_token%22%3A%7B%22xms_agvs%22%3A%7B%22essential%22%3Afalse%7D%7D%7D"))
     }
 
     @Test func fetchLPT_fallsBackToLoginLiveWhenV2Fails() async throws {

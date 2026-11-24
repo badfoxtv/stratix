@@ -27,6 +27,9 @@ jobs:
       - name: Test StratixModels
         run: swift test --package-path Packages/StratixModels
 
+      - name: Test DiagnosticsKit
+        run: swift test --package-path Packages/DiagnosticsKit
+
       - name: Test XCloudAPI
         run: swift test --package-path Packages/XCloudAPI
 
@@ -52,6 +55,17 @@ jobs:
       - name: Stamp build commit into Info.plist
         # Shown on the stream-failure overlay so a sideloaded build can be identified.
         run: /usr/libexec/PlistBuddy -c "Add :StratixBuildCommit string ${GITHUB_SHA::7}" Apps/Stratix/Stratix/Info.plist
+
+      - name: Point remote debug logs at the developer Mac
+        # RemoteLogSink POSTs redacted app logs here (collector: scratchpad log_collector.py).
+        # Set repo variable STRATIX_REMOTE_LOG_URL to override; empty disables shipping.
+        env:
+          REMOTE_LOG_URL: ${{ vars.STRATIX_REMOTE_LOG_URL || 'http://192.168.31.2:8765/log' }}
+        run: |
+          plist=Apps/Stratix/Stratix/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :StratixRemoteLogURL string $REMOTE_LOG_URL" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$plist" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$plist"
 
       - name: Build Stratix for tvOS device (unsigned)
         run: |

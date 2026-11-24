@@ -3,6 +3,7 @@
 //
 
 import Foundation
+import DiagnosticsKit
 
 
 // MARK: - Device Code Auth Response
@@ -304,6 +305,10 @@ public actor MicrosoftAuthService {
     private static let scope = "xboxlive.signin offline_access openid"
     // Passport console-transfer scoped token required by xCloud /connect ("LPT" in xal-node).
     private static let lptScope = "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"
+    // play.xbox.com asks for the age-verification status claim on every MSAL token request
+    // (shared-cone bundle: `Kpe(false)` -> {"id_token":{"xms_agvs":{"essential":false}}}).
+    static let ageVerificationClaims = #"{"id_token":{"xms_agvs":{"essential":false}}}"#
+    private let logger = GLogger(category: .auth)
 
     private let tokenStore: TokenStore
     private let session: URLSession
@@ -326,7 +331,9 @@ public actor MicrosoftAuthService {
         var components = URLComponents()
         components.queryItems = [
             URLQueryItem(name: "client_id", value: Self.clientId),
-            URLQueryItem(name: "scope", value: Self.scope)
+            URLQueryItem(name: "scope", value: Self.scope),
+            // Same Xbox-branded device-code flow play.xbox.com requests.
+            URLQueryItem(name: "cmode", value: "xbox")
         ]
         guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode device code request body")
@@ -337,7 +344,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             let responseBody = String(data: responseData, encoding: .utf8) ?? "<empty>"
             throw AuthError.invalidResponse("Device code request failed HTTP \(http.statusCode): \(responseBody)")
@@ -380,7 +387,9 @@ public actor MicrosoftAuthService {
         components.queryItems = [
             URLQueryItem(name: "grant_type", value: "urn:ietf:params:oauth:grant-type:device_code"),
             URLQueryItem(name: "client_id", value: Self.clientId),
-            URLQueryItem(name: "device_code", value: deviceCode)
+            URLQueryItem(name: "device_code", value: deviceCode),
+            URLQueryItem(name: "client_info", value: "1"),
+            URLQueryItem(name: "claims", value: Self.ageVerificationClaims)
         ]
         guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode token request body")
@@ -391,7 +400,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         let httpResponse = response as? HTTPURLResponse
 
         // Check for pending / expired before checking HTTP status.
@@ -454,14 +463,17 @@ public actor MicrosoftAuthService {
                 refreshToken: refreshToken,
                 endpoint: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
                 scope: "\(Self.lptScope) offline_access openid",
+                claims: Self.ageVerificationClaims,
                 storeRotatedRefreshToken: true
             )
         } catch {
+            logger.warning("Transfer token via login.microsoftonline.com failed, trying login.live.com: \(error.localizedDescription)")
             do {
                 return try await requestTransferToken(
                     refreshToken: refreshToken,
                     endpoint: "https://login.live.com/oauth20_token.srf",
                     scope: Self.lptScope,
+                    claims: nil,
                     // login.live.com issues a refresh token for the Passport scope only;
                     // storing it broke the next login.microsoftonline.com refresh (invalid_grant).
                     storeRotatedRefreshToken: false
@@ -478,14 +490,18 @@ public actor MicrosoftAuthService {
         refreshToken: String,
         endpoint: String,
         scope: String,
+        claims: String?,
         storeRotatedRefreshToken: Bool
     ) async throws -> String {
-        let items = [
+        var items = [
             URLQueryItem(name: "client_id", value: Self.clientId),
             URLQueryItem(name: "grant_type", value: "refresh_token"),
             URLQueryItem(name: "refresh_token", value: refreshToken),
             URLQueryItem(name: "scope", value: scope)
         ]
+        if let claims {
+            items.append(URLQueryItem(name: "claims", value: claims))
+        }
         guard let body = formURLEncodedBody(items), let url = URL(string: endpoint) else {
             throw AuthError.invalidResponse("Failed to encode LPT request body")
         }
@@ -495,7 +511,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let errorPayload = (try? JSONDecoder().decode(MSATokenErrorResponse.self, from: responseData))
                 .map { "\($0.error): \(($0.errorDescription ?? "").components(separatedBy: "\r\n").first ?? "")" }
@@ -513,6 +529,7 @@ public actor MicrosoftAuthService {
             // Same authority as refreshMSAToken, so the rotated token stays valid for it.
             try await tokenStore.saveRefreshToken(rotated)
         }
+        logger.info("Transfer token obtained from \(url.host ?? endpoint)")
         return tokenResponse.accessToken
     }
 
@@ -522,7 +539,8 @@ public actor MicrosoftAuthService {
             URLQueryItem(name: "client_id", value: Self.clientId),
             URLQueryItem(name: "grant_type", value: "refresh_token"),
             URLQueryItem(name: "refresh_token", value: refreshToken),
-            URLQueryItem(name: "scope", value: Self.scope)
+            URLQueryItem(name: "scope", value: Self.scope),
+            URLQueryItem(name: "claims", value: Self.ageVerificationClaims)
         ]
         guard let body = formURLEncodedBody(components.queryItems) else {
             throw AuthError.invalidResponse("Failed to encode refresh token request body")
@@ -533,7 +551,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             // Show "error: AADSTSxxxx: reason" instead of the raw JSON (trace IDs, timestamps),
             // so the cause is readable on the TV.
@@ -626,7 +644,7 @@ public actor MicrosoftAuthService {
         }
         request.httpBody = try JSONEncoder().encode(GssvLoginRequest(token: xstsToken, offeringId: offering))
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let bodyStr = String(data: data, encoding: .utf8) ?? "<empty>"
             throw AuthError.tokenExchangeFailed("Stream token HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(bodyStr)")
@@ -724,7 +742,7 @@ public actor MicrosoftAuthService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("1", forHTTPHeaderField: "x-xbl-contract-version")
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.loggedData(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
             throw AuthError.tokenExchangeFailed("HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0): \(bodyStr)")
