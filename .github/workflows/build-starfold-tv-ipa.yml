@@ -13,8 +13,9 @@ permissions:
 
 jobs:
   build-ipa:
-    # Intel pool: arm64 macos-26 jobs sat queued (runner capacity).
-    runs-on: macos-26-intel
+    # Starfold needs Xcode 27 (tvOS 27 SDK APIs); macos-26 images top out at Xcode 26.6.
+    # The xcode-27 image (arm64, macOS 27) ships Xcode 27.0–27.2.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
 
